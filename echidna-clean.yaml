@@ -15,3 +15,10 @@ contract: "CryticCleanTester"
 
 workers: 1
 format: text
+
+# crytic-compile must be told to use Foundry's full build pipeline so it
+# discovers all contracts in the project tree (including test/recon/).
+# Without this flag, crytic-compile exits with "contract not found" and
+# echidna produces no output — the scorecard then reads 0 violations (which
+# happens to be the correct clean-leg outcome but for the wrong reason).
+cryticArgs: ["--foundry-compile-all"]
