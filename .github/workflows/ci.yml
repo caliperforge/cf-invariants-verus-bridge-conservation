@@ -91,6 +91,12 @@ jobs:
           curl -sSfL https://github.com/crytic/echidna/releases/download/v2.2.5/echidna-2.2.5-x86_64-linux.tar.gz \
             | sudo tar xz -C /usr/local/bin
           echidna --version
+          # echidna shells out to crytic-compile to build the project; the
+          # binary tarball does not bundle it. Without this, echidna exits
+          # immediately ("crytic-compile not installed") and the campaign
+          # runs zero tests.
+          pip install --quiet crytic-compile==0.3.7
+          crytic-compile --version
 
       - name: forge build
         run: forge build
@@ -122,6 +128,16 @@ jobs:
           # and we fail the job here.
           violations=$(jq -r '.invariants_violated' "findings/INV-CONS-bridge-balance/${{ matrix.leg }}/scorecard.json")
           echo "leg=${{ matrix.leg }} violations=$violations expect=${{ matrix.expect }}"
+          # An errored campaign (e.g. echidna failed to start because
+          # crytic-compile was missing) produces no [status] heartbeat lines
+          # and reports 0 violations — which would silently satisfy the
+          # clean leg. A campaign that never fuzzed is a broken campaign on
+          # either leg, never a pass. (Echidna's "tests: N/M" counter is
+          # violations-found, not tests-executed, so it can't be used here.)
+          if ! grep -q '\[status\]' ".campaign-out/echidna-${{ matrix.leg }}.out"; then
+            echo "::error::${{ matrix.leg }} leg produced no campaign status output — echidna did not run. Check the output artifact for startup errors."
+            exit 1
+          fi
           case "${{ matrix.leg }}" in
             clean)
               if [ "$violations" -ne 0 ]; then
