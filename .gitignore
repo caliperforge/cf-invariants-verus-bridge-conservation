@@ -1,0 +1,9 @@
+out/
+cache/
+broadcast/
+lib/
+.campaign-out/
+echidna-corpus-clean/
+echidna-corpus-planted/
+crytic-export/
+.DS_Store

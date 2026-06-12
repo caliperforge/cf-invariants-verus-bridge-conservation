@@ -1,0 +1,17 @@
+# Echidna config — CLEAN leg (CryticCleanTester → MinimalBridge).
+#
+# Expected outcome: 0 violations within testLimit / timeout.
+
+testMode: property
+testLimit: 50000
+timeout: 300            # seconds
+seqLen: 100
+shrinkLimit: 5000
+
+coverage: true
+corpusDir: "echidna-corpus-clean"
+
+contract: "CryticCleanTester"
+
+workers: 1
+format: text

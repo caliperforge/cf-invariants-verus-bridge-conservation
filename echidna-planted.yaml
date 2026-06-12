@@ -1,0 +1,19 @@
+# Echidna config — PLANTED leg (CryticPlantedTester → PlantedBridge).
+#
+# Expected outcome: ≥1 violation of echidna_INVCONS_bridge_balance, surfaced
+# within seconds on a 2-call bridgeIn → bridgeOut sequence. The shrunk
+# counterexample is short enough to paste into CryticToFoundry replay.
+
+testMode: property
+testLimit: 50000
+timeout: 300            # seconds
+seqLen: 100
+shrinkLimit: 5000
+
+coverage: true
+corpusDir: "echidna-corpus-planted"
+
+contract: "CryticPlantedTester"
+
+workers: 1
+format: text

@@ -1,0 +1,148 @@
+name: ci
+
+# cf-invariants-verus-bridge-conservation CI.
+#
+# Two jobs:
+#   1. build-and-smoke — forge build + CryticToFoundry replay (the
+#      deterministic 2-call clean / planted cycles).
+#   2. echidna-matrix  — strategy.matrix over leg ∈ {clean, planted}.
+#      Each leg runs the same Echidna campaign against its CryticTester;
+#      the scorecard records the violation count and the leg-asserter
+#      checks the count matches expectation.
+#
+# Green badge means: build clean + smoke green + both legs hit their
+# expected violation counts (clean=0, planted≥1). A failure on either
+# leg is a real regression.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FOUNDRY_PROFILE: default
+
+jobs:
+  build-and-smoke:
+    name: forge build + CryticToFoundry smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+
+      - name: forge install
+        run: |
+          forge install foundry-rs/forge-std@v1.9.4
+          forge install Recon-Fuzz/chimera@463c0d4134931de315234be94eb21f1f032ea138
+
+      - name: forge build
+        run: forge build --sizes
+
+      - name: CryticToFoundry replay + smoke
+        run: forge test --match-path test/recon/CryticToFoundry.sol -vv
+
+  echidna-matrix:
+    name: echidna ${{ matrix.leg }} (expect ${{ matrix.expect }} violations)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: build-and-smoke
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - leg: clean
+            contract: CryticCleanTester
+            config: echidna-clean.yaml
+            expect: "0"
+          - leg: planted
+            contract: CryticPlantedTester
+            config: echidna-planted.yaml
+            expect: ">=1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+
+      - name: forge install
+        run: |
+          forge install foundry-rs/forge-std@v1.9.4
+          forge install Recon-Fuzz/chimera@463c0d4134931de315234be94eb21f1f032ea138
+
+      - name: Install Echidna
+        run: |
+          curl -sSfL https://github.com/crytic/echidna/releases/download/v2.2.5/echidna-2.2.5-x86_64-linux.tar.gz \
+            | sudo tar xz -C /usr/local/bin
+          echidna --version
+
+      - name: forge build
+        run: forge build
+
+      - name: Run echidna (${{ matrix.leg }})
+        run: |
+          mkdir -p .campaign-out
+          set +e
+          echidna . --contract "${{ matrix.contract }}" --config "${{ matrix.config }}" \
+            2>&1 | tee ".campaign-out/echidna-${{ matrix.leg }}.out"
+          # Echidna exit code is non-zero when it surfaces a violation; we
+          # don't fail CI on that — the scorecard assertion below is the
+          # source of truth and asserts leg-appropriate expectations.
+          set -e
+
+      - name: Capture scorecard
+        run: |
+          mkdir -p "findings/INV-CONS-bridge-balance/${{ matrix.leg }}"
+          ./scripts/capture_scorecard.sh \
+            --campaign echidna --leg "${{ matrix.leg }}" \
+            --invariant INV-CONS-bridge-balance \
+            --input ".campaign-out/echidna-${{ matrix.leg }}.out" \
+            --out-dir "findings/INV-CONS-bridge-balance/${{ matrix.leg }}"
+
+      - name: Assert leg expectation (${{ matrix.leg }} → ${{ matrix.expect }})
+        run: |
+          # The leg-appropriate assertion. Clean must report 0 violations;
+          # planted must report ≥1. Either deviation is a real regression
+          # and we fail the job here.
+          violations=$(jq -r '.invariants_violated' "findings/INV-CONS-bridge-balance/${{ matrix.leg }}/scorecard.json")
+          echo "leg=${{ matrix.leg }} violations=$violations expect=${{ matrix.expect }}"
+          case "${{ matrix.leg }}" in
+            clean)
+              if [ "$violations" -ne 0 ]; then
+                echo "::error::clean leg surfaced $violations violations — expected 0. The conservation rule failed on MinimalBridge."
+                exit 1
+              fi
+              ;;
+            planted)
+              if [ "$violations" -lt 1 ]; then
+                echo "::error::planted leg surfaced $violations violations — expected ≥1. The fuzzer failed to catch the planted defect; raise testLimit or check harness binding."
+                exit 1
+              fi
+              ;;
+          esac
+
+      - name: Upload campaign output + scorecard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: echidna-${{ matrix.leg }}-output
+          path: |
+            .campaign-out/echidna-${{ matrix.leg }}.out
+            findings/INV-CONS-bridge-balance/${{ matrix.leg }}/scorecard.json
+            findings/INV-CONS-bridge-balance/${{ matrix.leg }}/scorecard.md
