@@ -1,6 +1,8 @@
 # cf-invariants-verus-bridge-conservation
 
-**Status:** internal draft — repository is PRIVATE until §4b code-quality and §4a content gates pass. Do not link externally.
+[![ci](https://github.com/caliperforge/cf-invariants-verus-bridge-conservation/actions/workflows/ci.yml/badge.svg)](https://github.com/caliperforge/cf-invariants-verus-bridge-conservation/actions/workflows/ci.yml)
+
+**Status:** public. Conservation invariant reference for the Verus-Ethereum bridge exploit class; clean/planted twin CI-green since 2026-06-12. Apache-2.0.
 
 **Subject:** Verus–Ethereum bridge exploit, 2026-05-18, reported losses of USD 11.58M (per Halborn's post-mortem, cited in `docs/writeup.md`). Class: **cross-side conservation** — the bridge's both-sides-must-balance business rule existed in prose and spec but was never expressed as a machine-checkable invariant.
 
